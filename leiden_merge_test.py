@@ -113,6 +113,7 @@ def test_merge(
         p_values = p_values[np.isfinite(p_values)]
         if len(p_values) == 0:
             return np.nan
+        p_values = np.clip(p_values, np.nextafter(0, 1), 1.0)
         return stats.combine_pvalues(p_values, method="fisher").pvalue
 
     def _similarity_score(value, low=0.70, high=0.97):
