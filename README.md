@@ -1,4 +1,4 @@
-# Leiden Cluster Merging
+## Leiden Cluster Merging
 
 Introduction
 
