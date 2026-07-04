@@ -59,7 +59,8 @@ def test_merge(
     from scipy import sparse, stats
 
     rng = np.random.default_rng(random_state)
-
+    
+#Benjamini-Hochberg correction, creates adjusted p-values as each statistical test would generate a p-value.
     def _bh_adjust(p_values):
         p_values = np.asarray(p_values, dtype=float)
         adjusted = np.full(p_values.shape, np.nan, dtype=float)
