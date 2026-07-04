@@ -1,7 +1,5 @@
 ## Leiden Cluster Merging
 
-#Introduction
-
 ## Introduction
 
 Prototype tools for quantitatively testing whether selected Leiden clusters are reasonable merge candidates in Scanpy workflows.
@@ -246,7 +244,3 @@ result["overall_score"]
 
 The final combined merge-support score.
 =======
-#How it works
-
-Based on statistical tests
->>>>>>> 5e1a9be2ffbdb83560a838a84291dc4eb18b8132
