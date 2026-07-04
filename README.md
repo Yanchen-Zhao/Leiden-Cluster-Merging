@@ -6,7 +6,6 @@ Prototype tools for quantitatively testing whether selected Leiden clusters are 
 After creating leiden clusters and generating UMAP with appropriate parameters such as resolution and min dust size, run this tool to tell you how reasonable it would be to merge any leiden clusters you think may be the same cells.
 
 
-<<<<<<< HEAD
 ## How it works
 
 This tool is meant to be used after you already have a normal Scanpy analysis.
