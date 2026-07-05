@@ -9,7 +9,7 @@ For a UMAP like this:
 
 <img height="360" alt="image" src="https://github.com/user-attachments/assets/663f8c6e-2fbf-455e-af96-281bac94566c" />
 
-<span style="font-size: 12px;">
+<span style="font-size: 5px;">
 The UMAP is generated with the Scanpy tutorial adata: https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html
 </span>
 
