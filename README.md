@@ -13,6 +13,44 @@ To compare how statistically reasonable to merge cluster 0 and cluster 2, the al
 
 <img width="1280" height="413" alt="image" src="https://github.com/user-attachments/assets/390ee0af-bad9-48f8-81f1-97d7b8064c05" />
 
+## Basic use
+
+By default, the function uses `simple=True`.
+
+This means it returns only one number: the overall merge-support score.
+
+```python
+from leiden_merge_test import test_merge
+
+score = test_merge(
+    adata,
+    cluster_key="leiden",
+    clusters=["0", "2"],
+)
+
+score
+```
+
+The score ranges from 0 to 1.
+
+- 0 means the clusters look less reasonable to merge
+- 1 means the clusters look more reasonable to merge
+
+For detailed statistical results, use `simple=False`.
+
+```python
+result = test_merge(
+    adata,
+    cluster_key="leiden",
+    clusters=["0", "2"],
+    simple=False,
+)
+
+result["p_values"]
+```
+
+This returns p-values for the main statistical tests, such as Pearson correlation, Spearman correlation, differential expression, neighborhood mixing, and sample composition if a `sample_key` is provided.
+
 
 
 
@@ -213,9 +251,24 @@ You should still inspect marker genes, UMAP, known cell-type markers, and sample
 
 ### Main outputs
 
-The function returns a dictionary.
+By default, the function returns only one number:
 
-The most useful outputs are:
+```python
+score = test_merge(adata, cluster_key="leiden", clusters=["0", "2"])
+```
+
+To see detailed outputs, set `simple=False`.
+
+```python
+result = test_merge(
+    adata,
+    cluster_key="leiden",
+    clusters=["0", "2"],
+    simple=False,
+)
+```
+
+The most useful detailed outputs are:
 
 ```python
 result["summary"]
@@ -228,6 +281,12 @@ result["tests"]
 ```
 
 The main statistical tests and p-values.
+
+```python
+result["p_values"]
+```
+
+An easy-to-read table of p-values for the main statistical tests.
 
 ```python
 result["pairwise"]
@@ -252,4 +311,3 @@ result["overall_score"]
 ```
 
 The final combined merge-support score.
-=======

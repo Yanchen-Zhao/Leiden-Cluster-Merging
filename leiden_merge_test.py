@@ -14,6 +14,7 @@ def test_merge(
     logfc_threshold=0.25,
     random_state=0,
     weights=None,
+    simple=True,
 ):
     """
     Quantitatively test whether selected Leiden clusters are reasonable merge candidates.
@@ -53,12 +54,17 @@ def test_merge(
         Random seed.
     weights
         Optional dict overriding component weights for the overall score.
+    simple
+        If True, return only the overall merge-support score. If False, return
+        detailed tables including p-values for the statistical tests.
 
     Returns
     -------
-    dict
-        Dictionary containing summary, tests, pairwise results, component scores,
-        overall_score, and selected genes.
+    float or dict
+        If simple=True, returns only the overall merge-support score from 0 to 1.
+        If simple=False, returns detailed tables including summary, p_values,
+        pairwise results, differential expression, component scores, and selected
+        genes.
     """
     import itertools
 
@@ -525,6 +531,69 @@ def test_merge(
         ]
     )
 
+    p_value_rows = []
+    for row in pairwise.itertuples(index=False):
+        comparison = f"{row.cluster_a} vs {row.cluster_b}"
+        p_value_rows.append(
+            {
+                "test": "Pearson correlation test",
+                "comparison": comparison,
+                "statistic": "pearson_r",
+                "value": row.pearson_r,
+                "p_value": row.pearson_p_value,
+            }
+        )
+        p_value_rows.append(
+            {
+                "test": "Spearman correlation test",
+                "comparison": comparison,
+                "statistic": "spearman_r",
+                "value": row.spearman_r,
+                "p_value": row.spearman_p_value,
+            }
+        )
+
+    p_value_rows.extend(
+        [
+            {
+                "test": "Expression similarity permutation test",
+                "comparison": ",".join(clusters),
+                "statistic": "mean_pairwise_pearson",
+                "value": mean_pairwise_pearson,
+                "p_value": expression_perm_p,
+            },
+            {
+                "test": "Marker agreement test",
+                "comparison": ",".join(clusters),
+                "statistic": marker_test_name,
+                "value": marker_agreement_stat,
+                "p_value": marker_agreement_p,
+            },
+            {
+                "test": "Differential expression combined test",
+                "comparison": ",".join(clusters),
+                "statistic": "combined_gene_p_value",
+                "value": de_combined_p,
+                "p_value": de_combined_p,
+            },
+            {
+                "test": "Neighborhood mixing permutation test",
+                "comparison": ",".join(clusters),
+                "statistic": "cross_cluster_neighbor_fraction",
+                "value": neighborhood_mixing,
+                "p_value": neighborhood_perm_p,
+            },
+            {
+                "test": "Sample composition chi-square test",
+                "comparison": ",".join(clusters),
+                "statistic": "chi_square",
+                "value": sample_chi2_p,
+                "p_value": sample_chi2_p,
+            },
+        ]
+    )
+    p_values = pd.DataFrame(p_value_rows)
+
     summary = pd.DataFrame(
         [
             {
@@ -548,9 +617,10 @@ def test_merge(
         ]
     )
 
-    return {
+    detailed_result = {
         "summary": summary,
         "tests": tests,
+        "p_values": p_values,
         "pairwise": pairwise,
         "differential_expression": de.sort_values("adjusted_p_value", na_position="last"),
         "component_scores": component_scores,
@@ -560,3 +630,7 @@ def test_merge(
         "sample_table": sample_table,
         "selected_genes": selected_genes,
     }
+
+    if simple:
+        return overall_score
+    return detailed_result
