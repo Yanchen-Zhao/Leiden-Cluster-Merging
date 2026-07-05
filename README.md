@@ -5,13 +5,13 @@
 Prototype tools for quantitatively testing whether selected Leiden clusters are reasonable merge candidates in Scanpy workflows.
 After creating leiden clusters and generating UMAP with appropriate parameters such as resolution and minimum distance, run this tool to tell you how reasonable it would be to merge any leiden clusters you think may be the same cells.
 
-# For a UMAP like this:
+#### For a UMAP like this:
 
 <img height="360" alt="image" src="https://github.com/user-attachments/assets/663f8c6e-2fbf-455e-af96-281bac94566c" />
 
-(The UMAP is generated with the Scanpy tutorial adata: https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html)
+(The UMAP is generated with the Scanpy tutorial AnnData: https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html)
 
-# To compare how statistically reasonable to merge cluster 0 and cluster 7:
+#### To compare how statistically reasonable to merge cluster 0 and cluster 7:
 
 ```python
 from leiden_merge_test import test_merge
