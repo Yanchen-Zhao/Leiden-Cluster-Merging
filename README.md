@@ -7,11 +7,28 @@ After creating leiden clusters and generating UMAP with appropriate parameters s
 
 For a UMAP like this:
 
-<img width="449" height="360" alt="image" src="https://github.com/user-attachments/assets/5ae80494-fc10-4558-b78a-163f5e189d80" />
+<img width="897" height="720" alt="image" src="https://github.com/user-attachments/assets/663f8c6e-2fbf-455e-af96-281bac94566c" />
+The UMAP is generated with the Scanpy tutorial adata: https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html
 
-To compare how statistically reasonable to merge cluster 0 and cluster 2, the algorithm would return a value from 0, meaning not reasonable, to 1, meaning reasonable.
 
-<img width="1280" height="413" alt="image" src="https://github.com/user-attachments/assets/390ee0af-bad9-48f8-81f1-97d7b8064c05" />
+To compare how statistically reasonable to merge cluster 0 and cluster 7:
+
+```python
+from leiden_merge_test import test_merge
+
+result = test_merge(
+    adata,
+    cluster_key="leiden_res_0.50",
+    clusters=['0','7'],
+    simple=False,
+)
+
+score = result["overall_score"]
+f"{score:.5f}"
+```
+
+The algorithm returns '0.54659'.
+The value would from 0 to 1. "0" means not reasonable, "1" means reasonable.
 
 ## Basic use
 
