@@ -40,6 +40,8 @@ def test_merge(
         Maximum number of genes to use when genes is None.
     n_permutations
         Number of permutations for expression-profile and neighborhood-mixing tests.
+        Ignored when simple=True because those p-values are only returned in
+        detailed mode.
     max_permutation_cells
         Maximum number of selected cells used in permutation tests. Set to None to use
         all selected cells.
@@ -56,7 +58,8 @@ def test_merge(
         Optional dict overriding component weights for the overall score.
     simple
         If True, return only the overall merge-support score. If False, return
-        detailed tables including p-values for the statistical tests.
+        detailed tables including p-values for the statistical tests. Simple mode
+        skips p-value-only permutation calculations for speed.
 
     Returns
     -------
@@ -268,7 +271,7 @@ def test_merge(
     labels_perm_base = selected_labels[perm_indices]
 
     expression_perm_p = np.nan
-    if n_permutations > 0 and len(clusters) > 1:
+    if not simple and n_permutations > 0 and len(clusters) > 1:
         observed = mean_pairwise_pearson
         if np.isfinite(observed):
             permuted_stats = []
@@ -365,13 +368,14 @@ def test_merge(
     significant_mask = de["adjusted_p_value"] <= alpha
     n_significant_genes = int(significant_mask.sum())
     n_large_effect_genes = int((significant_mask & large_effect_mask).sum())
-    de_combined_p = _combine_pvalues(de["p_value"].to_numpy())
+    de_combined_p = np.nan if simple else _combine_pvalues(de["p_value"].to_numpy())
 
     marker_agreement_stat = np.nan
     marker_agreement_p = np.nan
     if len(clusters) == 2:
         marker_agreement_stat = mean_pairwise_spearman
-        marker_agreement_p = _combine_pvalues(pairwise["spearman_p_value"].to_numpy())
+        if not simple:
+            marker_agreement_p = _combine_pvalues(pairwise["spearman_p_value"].to_numpy())
         marker_test_name = "pairwise_spearman"
     else:
         ranks = cluster_means_df.rank(axis=1, ascending=False).to_numpy()
@@ -382,7 +386,8 @@ def test_merge(
         if n_items > 1 and n_raters > 1:
             marker_agreement_stat = float(12 * s / (n_raters**2 * (n_items**3 - n_items)))
             chi2_stat = n_raters * (n_items - 1) * marker_agreement_stat
-            marker_agreement_p = float(stats.chi2.sf(chi2_stat, df=n_items - 1))
+            if not simple:
+                marker_agreement_p = float(stats.chi2.sf(chi2_stat, df=n_items - 1))
         marker_test_name = "kendall_w"
 
     neighborhood_mixing = np.nan
@@ -399,7 +404,7 @@ def test_merge(
             same_weight = graph_coo.data[same_edges].sum()
             neighborhood_mixing = float(1 - same_weight / total_weight)
 
-            if n_permutations > 0:
+            if not simple and n_permutations > 0:
                 permuted_stats = []
                 for _ in range(n_permutations):
                     permuted_labels = rng.permutation(graph_labels)
@@ -455,6 +460,9 @@ def test_merge(
         )
     else:
         overall_score = np.nan
+
+    if simple:
+        return overall_score
 
     tests = pd.DataFrame(
         [
@@ -631,6 +639,4 @@ def test_merge(
         "selected_genes": selected_genes,
     }
 
-    if simple:
-        return overall_score
     return detailed_result
