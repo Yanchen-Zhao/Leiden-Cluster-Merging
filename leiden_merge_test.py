@@ -7,7 +7,9 @@ def test_merge(
     layer=None,
     genes=None,
     max_genes=2000,
-    n_permutations=1000,
+    n_permutations=100,
+    max_permutation_cells=5000,
+    max_de_cells_per_cluster=5000,
     alpha=0.05,
     logfc_threshold=0.25,
     random_state=0,
@@ -37,6 +39,12 @@ def test_merge(
         Maximum number of genes to use when genes is None.
     n_permutations
         Number of permutations for expression-profile and neighborhood-mixing tests.
+    max_permutation_cells
+        Maximum number of selected cells used in permutation tests. Set to None to use
+        all selected cells.
+    max_de_cells_per_cluster
+        Maximum number of cells per cluster used in gene-level differential expression
+        tests. Set to None to use all cells.
     alpha
         Adjusted p-value threshold used to count significant genes.
     logfc_threshold
@@ -143,6 +151,24 @@ def test_merge(
             return np.nan
         return float(np.sqrt(chi2 / denom))
 
+    def _subsample_by_label(labels_array, max_total=None, max_per_label=None):
+        labels_array = np.asarray(labels_array)
+        if max_total is None and max_per_label is None:
+            return np.arange(len(labels_array))
+
+        chosen = []
+        unique_labels = pd.unique(labels_array)
+        for label in unique_labels:
+            label_indices = np.flatnonzero(labels_array == label)
+            if max_per_label is not None and len(label_indices) > max_per_label:
+                label_indices = rng.choice(label_indices, size=max_per_label, replace=False)
+            chosen.append(label_indices)
+
+        chosen = np.concatenate(chosen) if chosen else np.array([], dtype=int)
+        if max_total is not None and len(chosen) > max_total:
+            chosen = rng.choice(chosen, size=max_total, replace=False)
+        return np.sort(chosen)
+
     if cluster_key not in adata.obs:
         raise KeyError(f"{cluster_key!r} is not in adata.obs.")
 
@@ -231,13 +257,17 @@ def test_merge(
     min_pairwise_spearman = float(pairwise["spearman_r"].min(skipna=True))
     mean_embedding_distance = float(pairwise["embedding_centroid_distance"].mean(skipna=True))
 
+    perm_indices = _subsample_by_label(selected_labels, max_total=max_permutation_cells)
+    X_perm = X_dense[perm_indices]
+    labels_perm_base = selected_labels[perm_indices]
+
     expression_perm_p = np.nan
     if n_permutations > 0 and len(clusters) > 1:
         observed = mean_pairwise_pearson
         if np.isfinite(observed):
             permuted_stats = []
             for _ in range(n_permutations):
-                permuted_labels = rng.permutation(selected_labels)
+                permuted_labels = rng.permutation(labels_perm_base)
                 perm_means = []
                 valid_perm = True
                 for cluster in clusters:
@@ -245,7 +275,7 @@ def test_merge(
                     if mask.sum() == 0:
                         valid_perm = False
                         break
-                    perm_means.append(X_dense[mask].mean(axis=0))
+                    perm_means.append(X_perm[mask].mean(axis=0))
                 if not valid_perm:
                     continue
                 corrs = []
@@ -260,10 +290,13 @@ def test_merge(
                 expression_perm_p = float((np.sum(permuted_stats >= observed) + 1) / (len(permuted_stats) + 1))
 
     de_rows = []
+    de_indices = _subsample_by_label(selected_labels, max_per_label=max_de_cells_per_cluster)
+    X_de = X_dense[de_indices]
+    labels_de = selected_labels[de_indices]
     if len(clusters) == 2:
         cluster_a, cluster_b = clusters
-        Xa = X_dense[selected_labels == cluster_a]
-        Xb = X_dense[selected_labels == cluster_b]
+        Xa = X_de[labels_de == cluster_a]
+        Xb = X_de[labels_de == cluster_b]
         for gene_idx, gene in enumerate(selected_genes):
             values_a = Xa[:, gene_idx]
             values_b = Xb[:, gene_idx]
@@ -290,7 +323,7 @@ def test_merge(
                 }
             )
     else:
-        grouped = [X_dense[selected_labels == cluster] for cluster in clusters]
+        grouped = [X_de[labels_de == cluster] for cluster in clusters]
         for gene_idx, gene in enumerate(selected_genes):
             values = [group[:, gene_idx] for group in grouped]
             try:
@@ -349,20 +382,23 @@ def test_merge(
     neighborhood_mixing = np.nan
     neighborhood_perm_p = np.nan
     if "connectivities" in adata.obsp:
-        graph = adata.obsp["connectivities"][selected_cells][:, selected_cells]
+        graph_cell_indices = np.flatnonzero(selected_cells)[perm_indices]
+        graph = adata.obsp["connectivities"][graph_cell_indices][:, graph_cell_indices]
         graph = graph.tocsr() if sparse.issparse(graph) else sparse.csr_matrix(graph)
-        same_cluster = selected_labels[:, None] == selected_labels[None, :]
         total_weight = graph.sum()
         if total_weight > 0:
-            same_weight = graph.multiply(same_cluster).sum()
+            graph_coo = graph.tocoo()
+            graph_labels = labels_perm_base
+            same_edges = graph_labels[graph_coo.row] == graph_labels[graph_coo.col]
+            same_weight = graph_coo.data[same_edges].sum()
             neighborhood_mixing = float(1 - same_weight / total_weight)
 
             if n_permutations > 0:
                 permuted_stats = []
                 for _ in range(n_permutations):
-                    permuted_labels = rng.permutation(selected_labels)
-                    perm_same = permuted_labels[:, None] == permuted_labels[None, :]
-                    perm_same_weight = graph.multiply(perm_same).sum()
+                    permuted_labels = rng.permutation(graph_labels)
+                    perm_same_edges = permuted_labels[graph_coo.row] == permuted_labels[graph_coo.col]
+                    perm_same_weight = graph_coo.data[perm_same_edges].sum()
                     permuted_stats.append(1 - perm_same_weight / total_weight)
                 permuted_stats = np.asarray(permuted_stats, dtype=float)
                 neighborhood_perm_p = float((np.sum(permuted_stats >= neighborhood_mixing) + 1) / (len(permuted_stats) + 1))
@@ -496,6 +532,8 @@ def test_merge(
                 "clusters": ",".join(clusters),
                 "n_clusters": len(clusters),
                 "n_cells": int(selected_cells.sum()),
+                "n_permutation_cells": int(len(perm_indices)),
+                "n_de_cells": int(len(de_indices)),
                 "n_genes_tested": len(selected_genes),
                 "mean_pairwise_pearson": mean_pairwise_pearson,
                 "min_pairwise_pearson": min_pairwise_pearson,
