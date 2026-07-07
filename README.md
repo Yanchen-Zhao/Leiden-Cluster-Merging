@@ -1,59 +1,73 @@
-## Leiden Cluster Merging
+# Leiden Cluster Merging
 
-## Introduction
+Prototype Python code for testing whether selected Leiden clusters are reasonable candidates to merge in a Scanpy single-cell workflow.
 
-Prototype tools for quantitatively testing whether selected Leiden clusters are reasonable merge candidates in Scanpy workflows.
-After creating leiden clusters and generating UMAP with appropriate parameters such as resolution and minimum distance, run this tool to tell you how reasonable it would be to merge any leiden clusters you think may be the same cells.
-
-#### For a UMAP like this:
-
-<img height="360" alt="image" src="https://github.com/user-attachments/assets/663f8c6e-2fbf-455e-af96-281bac94566c" />
-
-(The UMAP is generated with the Scanpy tutorial AnnData: https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html)
-
-#### To compare how statistically reasonable to merge cluster 0 and cluster 7:
+This project currently provides one function:
 
 ```python
-from leiden_merge_test import test_merge
-
-result = test_merge(
-    adata,
-    cluster_key="leiden_res_0.50",
-    clusters=['0','7'],
-    simple=False,
-)
-
-score = result["overall_score"]
-f"{score:.5f}"
+test_merge()
 ```
 
-The algorithm returns '0.54659'.
-The value would from 0 to 1. "0" means not reasonable, "1" means reasonable.
+The function is designed to run **after** you have already processed your `AnnData` object, calculated neighbors, generated UMAP, and created Leiden clusters.
 
-## Basic use
+It does not create clusters for you. Instead, it helps answer:
 
-By default, the function uses `simple=True`.
+> Given two or more existing Leiden clusters, how reasonable is it to merge them?
 
-This means it returns only one number: the overall merge-support score.
+## Example
+
+For a UMAP like this:
+
+<img height="360" alt="UMAP example" src="https://github.com/user-attachments/assets/663f8c6e-2fbf-455e-af96-281bac94566c" />
+
+The UMAP above comes from the Scanpy clustering tutorial:
+
+https://scanpy.scverse.org/en/stable/tutorials/basics/clustering.html
+
+To test whether clusters 0 and 7 are reasonable to merge:
 
 ```python
 from leiden_merge_test import test_merge
 
 score = test_merge(
     adata,
-    cluster_key="leiden",
-    clusters=["0", "2"],
+    cluster_key="leiden_res_0.50",
+    clusters=["0", "7"],
 )
 
 score
 ```
 
-The score ranges from 0 to 1.
+By default, the function returns one number between 0 and 1.
 
-- 0 means the clusters look less reasonable to merge
-- 1 means the clusters look more reasonable to merge
+- `0` means the selected clusters look less reasonable to merge
+- `1` means the selected clusters look more reasonable to merge
 
-For detailed statistical results, use `simple=False`.
+For example, a score of `0.54659` means the evidence is mixed. It is not a final biological decision.
+
+## Basic Use
+
+The default setting is:
+
+```python
+simple=True
+```
+
+This means the function returns only the final merge-support score:
+
+```python
+score = test_merge(
+    adata,
+    cluster_key="leiden",
+    clusters=["0", "2"],
+)
+```
+
+This mode is faster because it skips p-value-only permutation calculations and detailed output tables.
+
+## Detailed Use
+
+If you want p-values and detailed tables, use:
 
 ```python
 result = test_merge(
@@ -62,193 +76,294 @@ result = test_merge(
     clusters=["0", "2"],
     simple=False,
 )
+```
 
+Then inspect:
+
+```python
 result["p_values"]
 ```
 
-This returns p-values for the main statistical tests, such as Pearson correlation, Spearman correlation, differential expression, neighborhood mixing, and sample composition if a `sample_key` is provided.
+This table gives p-values for the main statistical tests, such as:
 
+- Pearson correlation test
+- Spearman correlation test
+- expression similarity permutation test
+- marker agreement test
+- differential expression combined test
+- neighborhood mixing permutation test
+- sample composition chi-square test, if `sample_key` is provided
 
+## Inputs
 
-
-## How it works
-
-This tool is meant to be used after you already have a normal Scanpy analysis.
-
-For example, you may already have:
-
-- a processed `AnnData` object called `adata`
-- Leiden cluster labels in `adata.obs["leiden"]`
-- PCA results in `adata.obsm["X_pca"]`
-- a neighbor graph from `sc.pp.neighbors`
-- a UMAP plot that helps you inspect the clusters
-
-The tool does not create clusters for you. Instead, it helps you test a question like:
-
-> Are clusters 3 and 7 similar enough that merging them is reasonable?
-
-You choose the clusters you want to test, and the function calculates several statistical measurements. Each measurement looks at the proposed merge from a different angle.
-
-### 1. It selects the cells and genes to test
-
-First, the function keeps only the cells from the clusters you selected.
-
-For example, if you test:
+Important arguments:
 
 ```python
-clusters=["3", "7"]
+test_merge(
+    adata,
+    cluster_key,
+    clusters,
+    sample_key=None,
+    use_rep="X_pca",
+    layer=None,
+    genes=None,
+    max_genes=2000,
+    n_permutations=100,
+    max_permutation_cells=5000,
+    max_de_cells_per_cluster=5000,
+    alpha=0.05,
+    logfc_threshold=0.25,
+    random_state=0,
+    weights=None,
+    simple=True,
+)
 ```
 
-the function only uses cells from clusters 3 and 7.
+### Required Inputs
 
-Then it chooses genes for testing. If your `adata` has highly variable genes, it uses those. If not, it uses the most variable genes. This keeps the test focused on genes that carry useful biological information.
+`adata`
 
-### 2. It compares average expression profiles
+Your processed Scanpy `AnnData` object.
 
-For each selected cluster, the function calculates the average expression of each selected gene.
+`cluster_key`
 
-You can imagine this as making one summary expression profile for each cluster.
+The column in `adata.obs` containing Leiden cluster labels.
 
-Then it compares those profiles using correlation:
+Example:
 
-- Pearson correlation
-- Spearman correlation
+```python
+cluster_key="leiden"
+```
 
-High correlation means the clusters have similar gene expression patterns. This supports merging.
+or:
 
-Low correlation means the clusters look different. This argues against merging.
+```python
+cluster_key="leiden_res_0.50"
+```
 
-For more than two clusters, the function compares every pair. For example, if you test clusters 3, 7, and 9, it compares:
+`clusters`
 
-- 3 vs 7
-- 3 vs 9
-- 7 vs 9
+The cluster labels you want to test as one possible merge group.
 
-The function reports both the average pairwise similarity and the lowest pairwise similarity. The lowest similarity is important because one very different cluster can make a proposed merge questionable.
+Example:
 
-### 3. It runs a permutation test for expression similarity
+```python
+clusters=["0", "7"]
+```
 
-The function also asks:
+or:
 
-> Are these clusters more similar than expected by random chance?
+```python
+clusters=["0", "7", "12"]
+```
 
-To test this, it randomly shuffles the cluster labels many times. Each shuffle creates a random comparison. The function then checks whether the real cluster similarity is stronger than the shuffled results.
+The code supports two clusters and more than two clusters.
 
-This gives a permutation p-value.
+### Optional Inputs
 
-A small p-value means the selected clusters are unusually similar compared with random label shuffling.
+`sample_key`
 
-### 4. It tests for differentially expressed genes
+Use this if `adata.obs` has sample or batch labels.
 
-The function checks whether genes are significantly different between the clusters.
-
-If you test exactly two clusters, it uses the Mann-Whitney U test for each gene.
-
-If you test three or more clusters, it uses the Kruskal-Wallis test for each gene.
-
-These tests ask:
-
-> Does this gene show different expression across the selected clusters?
-
-Because many genes are tested, the function adjusts the p-values using Benjamini-Hochberg correction. This helps control false positives.
-
-The function reports:
-
-- gene-level p-values
-- adjusted p-values
-- effect sizes
-- log2 fold changes
-- how many genes are significantly different
-- how many genes are significantly different with a large enough effect size
-
-This matters because a tiny difference can become statistically significant when there are many cells. The tool therefore looks at both p-values and effect sizes.
-
-If many genes are strongly different, merging is less supported.
-
-If only a few genes are different, merging may be more reasonable.
-
-### 5. It checks marker agreement
-
-The function checks whether the selected clusters rank genes in a similar way.
-
-For two clusters, it uses Spearman correlation.
-
-For three or more clusters, it uses a rank agreement measurement similar to Kendall's W.
-
-This helps answer:
-
-> Do these clusters have similar marker-gene patterns?
-
-High marker agreement supports merging.
-
-Low marker agreement suggests the clusters may represent different cell states or cell types.
-
-### 6. It compares cluster positions in PCA space
-
-If `adata.obsm["X_pca"]` is available, the function calculates the center point of each selected cluster in PCA space.
-
-Then it measures the distance between those cluster centers.
-
-Small distance means the clusters are close in PCA space. This supports merging.
-
-Large distance means the clusters are farther apart. This argues against merging.
-
-### 7. It checks neighborhood mixing
-
-If your `adata` has a neighbor graph in `adata.obsp["connectivities"]`, the function checks whether cells from the selected clusters are mixed together in the graph.
-
-This is useful because Leiden clustering is based on the neighbor graph.
-
-The function measures how often cells connect to cells from another selected cluster.
-
-High neighborhood mixing means the clusters are strongly connected to each other. This supports merging.
-
-Low neighborhood mixing means the clusters are separated in the graph. This argues against merging.
-
-The function also runs a permutation test for this measurement by shuffling cluster labels.
-
-### 8. It checks sample or batch composition
-
-If you provide `sample_key`, the function checks whether the selected clusters have different sample or batch composition.
-
-For example:
+Example:
 
 ```python
 sample_key="sample"
 ```
 
-The function creates a table comparing clusters and samples. Then it runs a chi-square test and calculates Cramer's V.
+This lets the function test whether the selected clusters have different sample or batch composition.
 
-This helps answer:
+`use_rep`
 
-> Are these clusters different because of biology, or because of sample/batch effects?
+The embedding used to compare cluster positions. The default is:
 
-A strong sample or batch association does not automatically mean clusters should merge. It is a warning that the user should inspect the data carefully.
+```python
+use_rep="X_pca"
+```
 
-### 9. It creates component scores
+This uses `adata.obsm["X_pca"]` if it exists.
 
-The function converts the main results into simple scores from 0 to 1.
+`layer`
 
-The component scores are:
+Expression layer to use. If `None`, the function uses `adata.X`.
+
+`genes`
+
+Optional list of genes to test. If not provided, the function uses highly variable genes when available. If highly variable genes are not available, it uses the most variable genes.
+
+`max_genes`
+
+Maximum number of genes to test when `genes=None`.
+
+`n_permutations`
+
+Number of permutations used in detailed mode for permutation p-values.
+
+This is ignored when `simple=True`.
+
+`max_permutation_cells`
+
+Maximum number of selected cells used for permutation tests.
+
+This keeps detailed mode from becoming too slow on large datasets.
+
+`max_de_cells_per_cluster`
+
+Maximum number of cells per cluster used for gene-level differential expression tests.
+
+`simple`
+
+If `True`, return only the final merge-support score.
+
+If `False`, return detailed result tables.
+
+## How It Works
+
+The function compares the selected clusters from several angles.
+
+### 1. Select Cells And Genes
+
+First, the function keeps only cells from the clusters you selected.
+
+For example:
+
+```python
+clusters=["3", "7"]
+```
+
+means only cells from clusters 3 and 7 are used.
+
+Then the function selects genes.
+
+It uses highly variable genes if they are available in:
+
+```python
+adata.var["highly_variable"]
+```
+
+If not, it chooses the most variable genes.
+
+### 2. Compare Average Expression Profiles
+
+For each selected cluster, the function calculates the average expression of each selected gene.
+
+This creates one expression profile per cluster.
+
+Then the function compares those profiles using:
+
+- Pearson correlation
+- Spearman correlation
+
+High correlation supports merging.
+
+Low correlation argues against merging.
+
+For more than two clusters, every pair is compared. For example:
+
+```python
+clusters=["3", "7", "9"]
+```
+
+compares:
+
+- 3 vs 7
+- 3 vs 9
+- 7 vs 9
+
+The function uses the **lowest pairwise Pearson correlation** as one part of the final score. This is important because one dissimilar cluster can make a proposed merge questionable.
+
+### 3. Test Differential Expression
+
+The function tests whether genes are different between the selected clusters.
+
+For exactly two clusters, it uses:
+
+```text
+Mann-Whitney U test
+```
+
+For three or more clusters, it uses:
+
+```text
+Kruskal-Wallis test
+```
+
+Because many genes are tested, p-values are adjusted using Benjamini-Hochberg correction.
+
+The function counts:
+
+- number of significant genes
+- number of significant genes with large enough log2 fold change
+
+Many strongly different genes argue against merging.
+
+Few strongly different genes support merging.
+
+### 4. Check Marker Agreement
+
+The function checks whether selected clusters rank genes similarly.
+
+For two clusters, it uses Spearman correlation.
+
+For three or more clusters, it uses a Kendall's W-like rank agreement statistic.
+
+High marker agreement supports merging.
+
+Low marker agreement argues against merging.
+
+### 5. Compare PCA Positions
+
+If `adata.obsm["X_pca"]` exists, the function calculates a center point for each selected cluster in PCA space.
+
+Then it measures the distance between cluster centers.
+
+Small distance supports merging.
+
+Large distance argues against merging.
+
+### 6. Check Neighborhood Mixing
+
+If `adata.obsp["connectivities"]` exists, the function checks whether cells from the selected clusters are mixed in the Scanpy neighbor graph.
+
+This matters because Leiden clustering is based on the neighbor graph.
+
+High neighborhood mixing supports merging.
+
+Low neighborhood mixing argues against merging.
+
+In detailed mode, the function also runs a permutation test for neighborhood mixing.
+
+### 7. Check Sample Or Batch Composition
+
+If `sample_key` is provided, the function checks whether the selected clusters have different sample or batch composition.
+
+It uses:
+
+- chi-square test
+- Cramer's V
+
+Strong sample or batch association does not automatically mean clusters should or should not merge. It is a warning to inspect the biology carefully.
+
+### 8. Calculate Component Scores
+
+The function converts the evidence into component scores from 0 to 1:
 
 - expression similarity
 - marker agreement
 - inverse differential-expression evidence
-- PCA/embedding similarity
+- PCA or embedding similarity
 - neighborhood mixing
 - sample consistency
 
-A score closer to 1 means stronger support for merging.
+A component score closer to 1 supports merging.
 
-A score closer to 0 means weaker support for merging.
+A component score closer to 0 argues against merging.
 
-### 10. It calculates an overall merge score
+### 9. Calculate Overall Score
 
-Finally, the function combines the component scores into one overall score.
+The final merge-support score is a weighted average of the component scores.
 
-By default, expression similarity and differential-expression evidence are weighted most strongly.
-
-The default weights are:
+Default weights:
 
 - expression similarity: 25%
 - marker agreement: 20%
@@ -257,53 +372,43 @@ The default weights are:
 - neighborhood mixing: 15%
 - sample consistency: 5%
 
-The overall score is not meant to replace biological judgment. It is a quantitative guide.
+The score is meant to guide inspection. It should not replace biological judgment.
 
-In simple terms:
+## Detailed Outputs
 
-- high score: the selected clusters look more reasonable to merge
-- low score: the selected clusters look less reasonable to merge
+When `simple=False`, the function returns a dictionary.
 
-You should still inspect marker genes, UMAP, known cell-type markers, and sample information before making the final decision.
-
-### Main outputs
-
-By default, the function returns only one number:
-
-```python
-score = test_merge(adata, cluster_key="leiden", clusters=["0", "2"])
-```
-
-To see detailed outputs, set `simple=False`.
-
-```python
-result = test_merge(
-    adata,
-    cluster_key="leiden",
-    clusters=["0", "2"],
-    simple=False,
-)
-```
-
-The most useful detailed outputs are:
+Useful outputs:
 
 ```python
 result["summary"]
 ```
 
-A one-row overview of the proposed merge.
-
-```python
-result["tests"]
-```
-
-The main statistical tests and p-values.
+One-row overview of the proposed merge.
 
 ```python
 result["p_values"]
 ```
 
-An easy-to-read table of p-values for the main statistical tests.
+Easy-to-read table of the main statistical test p-values.
+
+In this table:
+
+- `value` is the statistic or measured quantity
+- `p_value` is the p-value for that statistic, when available
+
+For example:
+
+- Pearson correlation test: `value` is Pearson `r`
+- Spearman correlation test: `value` is Spearman `r`
+- neighborhood mixing permutation test: `value` is the fraction of graph connections crossing between selected clusters
+- differential expression combined test: `value` is currently the combined p-value
+
+```python
+result["tests"]
+```
+
+Detailed test table with short interpretations.
 
 ```python
 result["pairwise"]
@@ -328,3 +433,35 @@ result["overall_score"]
 ```
 
 The final combined merge-support score.
+
+```python
+result["cluster_sizes"]
+```
+
+Number of selected cells in each cluster.
+
+```python
+result["cluster_means"]
+```
+
+Average expression profile for each selected cluster.
+
+```python
+result["sample_table"]
+```
+
+Cluster-by-sample table, only available if `sample_key` is provided.
+
+```python
+result["selected_genes"]
+```
+
+Genes used in the test.
+
+## Notes
+
+Very small p-values may appear as `0.0`. This usually means the p-value is smaller than Python can represent, not that the true probability is literally zero.
+
+Permutation p-values are limited by `n_permutations`. For example, with `n_permutations=100`, the smallest possible permutation p-value is about `1 / 101`.
+
+Single-cell datasets often have many cells, so tiny differences can become statistically significant. For this reason, the overall score uses both statistical evidence and effect-size-like summaries.
